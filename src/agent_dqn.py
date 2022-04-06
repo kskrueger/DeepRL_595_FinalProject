@@ -71,8 +71,8 @@ class Agent_DQN(Agent):
 
         # screen_height, screen_width
         num_frames = 4
-        self.policy_net = DQN(num_frames, self.n_actions).to(self.device)
-        self.target_net = DQN(num_frames, self.n_actions).to(self.device)
+        self.policy_net = DQN().to(self.device)
+        self.target_net = DQN().to(self.device)
         self.target_net.load_state_dict(self.policy_net.state_dict())
         self.target_net.eval()
 
