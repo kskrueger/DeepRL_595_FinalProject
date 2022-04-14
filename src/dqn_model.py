@@ -23,70 +23,110 @@ class DQN(nn.Module):
 
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-        conv_channels_1 = 32
-        conv_channels_2 = 32
-        conv_channels_3 = 32
+        # TODO: Set *all* the parameters below this line
+        img_conv_channels_1 = 32
+        img_conv_channels_2 = 32
+        img_conv_channels_3 = 32
+        img_max_pooling = (2, 2)
+
+        frame_merge_size = 0  # TODO: what is this concat/merged size?
+        frame_merge_channels = 32
+        frame_merge_dropout = .5
+        frame_merge_fc = 512
+
+        motor_fc_1 = 512
+        motor_dropout = .5
+        motor_fc_2 = 512
+
+        final_merged_size = 0  # TODO: what is concat/merged size?
+        final_fc_1 = 512
+        final_dropout = .5
+        final_fc_2 = 512
+        final_out_actions = self.NUM_ACTIONS
 
         self.overhead_cam_net = nn.Sequential(OrderedDict([
-            ('conv1', nn.Conv2d(self.OVERHEAD_CAM_SHAPE[2], conv_channels_1, kernel_size=5)),
-            ('bn1', nn.BatchNorm2d(conv_channels_1)),
+            ('conv1', nn.Conv2d(self.OVERHEAD_CAM_SHAPE[2], img_conv_channels_1, kernel_size=(7, 7), stride=(2, 2))),
+            ('bn1', nn.BatchNorm2d(img_conv_channels_1)),
             ('relu1', nn.ReLU()),
-            ('conv2', nn.Conv2d(conv_channels_1, conv_channels_2, kernel_size=5)),
-            ('bn2', nn.BatchNorm2d(conv_channels_2)),
+            ('conv2', nn.Conv2d(img_conv_channels_1, img_conv_channels_2, kernel_size=(5, 5))),
+            ('bn2', nn.BatchNorm2d(img_conv_channels_2)),
             ('relu2', nn.ReLU()),
-            ('conv3', nn.Conv2d(conv_channels_2, conv_channels_3, kernel_size=5)),
-            ('bn3', nn.BatchNorm2d(conv_channels_3)),
+            ('conv3', nn.Conv2d(img_conv_channels_2, img_conv_channels_3, kernel_size=(3, 3))),
+            ('bn3', nn.BatchNorm2d(img_conv_channels_3)),
             ('relu3', nn.ReLU()),
-            ('maxpool1', nn.MaxPool2d()),  # TODO: what param for MaxPool
+            ('maxpool1', nn.MaxPool2d(img_max_pooling)),
         ]))
 
         self.wrist_cam_net = nn.Sequential(OrderedDict([
-            ('conv1', nn.Conv2d(self.WRIST_CAM_SHAPE_CAM_SHAPE[2], conv_channels_1, kernel_size=5)),
-            ('bn1', nn.BatchNorm2d(conv_channels_1)),
+            ('conv1', nn.Conv2d(self.WRIST_CAM_SHAPE_CAM_SHAPE[2], img_conv_channels_1, kernel_size=(7, 7), stride=(2, 2))),
+            ('bn1', nn.BatchNorm2d(img_conv_channels_1)),
             ('relu1', nn.ReLU()),
-            ('conv2', nn.Conv2d(conv_channels_1, conv_channels_2, kernel_size=5)),
-            ('bn2', nn.BatchNorm2d(conv_channels_2)),
+            ('conv2', nn.Conv2d(img_conv_channels_1, img_conv_channels_2, kernel_size=(5, 5))),
+            ('bn2', nn.BatchNorm2d(img_conv_channels_2)),
             ('relu2', nn.ReLU()),
-            ('conv3', nn.Conv2d(conv_channels_2, conv_channels_3, kernel_size=5)),
-            ('bn3', nn.BatchNorm2d(conv_channels_3)),
+            ('conv3', nn.Conv2d(img_conv_channels_2, img_conv_channels_3, kernel_size=(3, 3))),
+            ('bn3', nn.BatchNorm2d(img_conv_channels_3)),
             ('relu3', nn.ReLU()),
-            ('maxpool1', nn.MaxPool2d()),  # TODO: what param for MaxPool
+            ('maxpool1', nn.MaxPool2d(img_max_pooling)),
         ]))
 
-        # TODO: likely will merge networks in the forward() call
-        self.merge_camera_nets = None
-
-        motor_fc_1 = 512
-        motor_fc_2 = 512
+        self.merged_frames_net = self.wrist_cam_net = nn.Sequential(OrderedDict([
+            ('conv1', nn.Conv2d(frame_merge_size, frame_merge_channels, kernel_size=2)),  # TODO: kernel?
+            ('relu1', nn.ReLU()),
+            ('dropout1', nn.Dropout(frame_merge_dropout)),
+            ('fc1', nn.Linear(frame_merge_channels, frame_merge_fc)),
+            ('relu2', nn.ReLU()),
+        ]))
 
         self.motor_net = nn.Sequential(OrderedDict([
             ('fc1', nn.Linear(self.MOTOR_SIGNAL_SHAPE, motor_fc_1)),
-            ('dropout1', nn.Dropout()),
+            ('relu1', nn.ReLU()),
+            ('dropout1', nn.Dropout(motor_dropout)),
             ('fc2', nn.Linear(motor_fc_1, motor_fc_2)),
+            ('relu2', nn.ReLU()),
         ]))
 
-        # Can run the custom weight initialization method here
+        self.final_net = nn.Sequential(OrderedDict([
+            ('fc1', nn.Linear(final_merged_size, final_fc_1)),
+            ('relu1', nn.ReLU()),
+            ('dropout1', nn.Dropout(final_dropout)),
+            ('fc2', nn.Linear(final_fc_1, final_fc_2)),
+            ('relu2', nn.ReLU()),
+            ('output', nn.Linear(final_fc_2, final_out_actions)),
+        ]))
+
+        # Can run a custom weight initialization method here
         # self.apply(self.init_weights)
 
-    def forward(self, x):
+    def forward(self, overhead_frame_x, wrist_frame_x, motor_signals_x):
         """
         Step the network forward
         """
 
         # TODO: This convert might not be needed if bug is fixed in test code before this
-        if type(x) is np.ndarray:
-            x = np.array([x])
-            x = x.swapaxes(1, 3).astype(np.float32)
-            x = torch.from_numpy(x)
+        # if type(x) is np.ndarray:
+        #     x = np.array([x])
+        #     x = x.swapaxes(1, 3).astype(np.float32)
+        #     x = torch.from_numpy(x)
 
-        x = x.to(self.device)
-        x = F.relu(self.conv1(x))
-        x = F.relu(self.conv2(x))
-        x = F.relu(self.conv3(x))
-        x = F.relu(self.hidden(x.view(x.size(0), -1)))
-        x = self.head(x)
+        overhead_frame_x = overhead_frame_x.to(self.device)
+        wrist_frame_x = wrist_frame_x.to(self.device)
+        motor_signals_x = motor_signals_x.to(self.device)
 
-        return x
+        overhead_out = self.overhead_cam_net.forward(overhead_frame_x)
+        wrist_out = self.wrist_cam_net.forward(wrist_frame_x)
+
+        merge1_x = torch.cat([overhead_out, wrist_out], 1)
+
+        merge1_out = self.merged_frames_net(merge1_x)
+
+        motor_out = self.motor_net(motor_signals_x)
+
+        merge2_x = torch.cat([merge1_out, motor_out], 1)
+
+        final_out = self.final_net(merge2_x)
+
+        return final_out
 
     # Can add a custom weight initialization method here
     def init_weights(self, m):
