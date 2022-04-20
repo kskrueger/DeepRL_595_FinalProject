@@ -1,0 +1,1 @@
+/home/pks_97/catkin_rlp/devel/.private/franka_gripper/share/roseus/ros/franka_gripper/msg/MoveGoal.l
