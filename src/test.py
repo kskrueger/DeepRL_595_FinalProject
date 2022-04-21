@@ -1,6 +1,6 @@
 import argparse
 import numpy as np
-from environment import Environment
+from panda_env import PandaEnv
 
 seed = 100
 
@@ -35,7 +35,7 @@ def test(agent, env, total_episodes=30):
 
 def run(args):
     if args.test_dqn:
-        env = Environment('BreakoutNoFrameskip-v4', args, test=True)
+        env = PandaEnv()
         from agent_dqn import Agent_DQN
         agent = Agent_DQN(env, args)
         test(agent, env, total_episodes=100)

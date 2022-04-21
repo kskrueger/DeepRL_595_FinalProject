@@ -17,9 +17,9 @@ class DQN(nn.Module):
 
         # 1 continuous action for each joint (-1 to 1), plus the gripper (<.5 or >.5)
         self.NUM_ACTIONS = 8
-        self.OVERHEAD_CAM_SHAPE = (720, 1280, 4)  # RGB-D Overhead Camera
-        self.WRIST_CAM_SHAPE = (720, 1280, 3)  # RGB Wrist Camera
-        self.MOTOR_SIGNAL_SHAPE = 8  # 1 for each joint position, plus gripper
+        self.OVERHEAD_CAM_SHAPE = (720, 960, 4)  # RGB-D Overhead Camera
+        self.WRIST_CAM_SHAPE = (720, 960, 3)  # RGB Wrist Camera
+        self.MOTOR_SIGNAL_SHAPE = 6  # 1 for each joint axis, twist, plus gripper fingers
 
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 

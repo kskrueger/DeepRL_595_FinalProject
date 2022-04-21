@@ -61,10 +61,8 @@ class Agent_DQN(Agent):
         self.losses = []
         self.memory = deque([], maxlen=self.REPLAY_MEMORY_SIZE)
         self.env = env
-        h = 84
-        w = 84
-        d = 4
-        self.state = np.zeros((h, w, d))
+
+        self.state = (np.zeros((6, 1)), np.zeros((720, 960, 3)), np.zeros((720, 960, 4)))
 
         # Get number of actions from gym action space
         self.n_actions = env.action_space.n
@@ -246,8 +244,6 @@ class Agent_DQN(Agent):
             print(e)
             print("Cancelled")
 
-        np.save("{}_durations".format(self.network_name), np.array(self.episode_durations))
-        np.save("{}_durations".format(self.network_name), np.array(self.scores))
         np.save("{}_durations".format(self.network_name), np.array(self.logs))
-
-        ###########################
+        # np.save("{}_durations".format(self.network_name), np.array(self.episode_durations))
+        # np.save("{}_durations".format(self.network_name), np.array(self.scores))
