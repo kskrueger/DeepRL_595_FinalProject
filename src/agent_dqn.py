@@ -4,6 +4,7 @@ import math
 import random
 from itertools import count
 
+import gym
 import numpy as np
 from collections import deque, namedtuple
 import os
@@ -28,14 +29,14 @@ Transition = namedtuple('Transition', ('state', 'action', 'next_state', 'reward'
 
 
 class Agent_DQN(Agent):
-    def __init__(self, env, args, **kwargs):
+    def __init__(self, env: gym.Env, args, **kwargs):
         """
         Initialize all parameters for training here
         """
 
         super(Agent_DQN, self).__init__(env)
 
-        self.network_name = "Project4_1"  # increment this number before training again
+        self.network_name = "Project4_2"  # increment this number before training again
         self.episode_durations = []
         self.logs = []
         self.scores = []
@@ -107,14 +108,15 @@ class Agent_DQN(Agent):
         if sample > eps:
             with torch.no_grad():
                 # overhead_frame_x, wrist_frame_x, motor_signals_x
-                action = self.policy_net(observation['overhead'], observation['wrist'], observation['motors'])
+                action = self.policy_net(observation['overhead'], observation['wrist'], observation['motors']).max(1)[1].view(1, 1)
         else:
-            action = torch.tensor(np.array([self.env.action_space.sample()]), device=self.device, dtype=torch.float32)
+            action = torch.tensor([[self.env.action_space.sample()]], device=self.device, dtype=torch.long)
 
-        # if test:
-        #     action = action.detach().cpu().numpy()[0][0]
+        if test:
+            action = action.detach().cpu().numpy()[0][0]
 
-        action = action.detach()[0]
+        # print("action", action)
+        # action = action.detach()[0]
 
         return action
 
@@ -149,26 +151,21 @@ class Agent_DQN(Agent):
             state_overhead_batch = torch.cat([s['overhead'] for s in batch.state])
             state_wrist_batch = torch.cat([s['wrist'] for s in batch.state])
             state_motor_batch = torch.cat([s['motors'] for s in batch.state])
-            action_batch = torch.stack(batch.action, dim=0)  # motor control values from the batch
+            action_batch = torch.cat(batch.action)
             reward_batch = torch.cat(batch.reward)
 
             # Compute Q(s_t, a) - the model computes Q(s_t), then we select the columns of actions taken.
-            # These are the actions which would've been taken for each batch state according to policy_net
-            state_action_batch = self.policy_net(state_overhead_batch, state_wrist_batch, state_motor_batch)#.gather(1, action_batch)  # what latest network thinks the motors should be
+            state_action_batch = self.policy_net(state_overhead_batch, state_wrist_batch, state_motor_batch).gather(1, action_batch)
 
             # Compute V(s_{t+1}) values for all next states.
-            # Expected values of actions for non_final_next_states are computed based on the "older" target_net;
-            # selecting their best reward with max(1)[0].
-            # This is merged based on the mask, such that we'll have either the expected state value or 0 in case the state was final.
-            next_state_values = torch.zeros((self.BATCH_SIZE, 5), device=self.device)
-            # TODO: Remove the max() when doing continuous outputs
-            next_state_values[non_final_mask] = self.target_net(non_final_next_state_overhead, non_final_next_state_wrist, non_final_next_state_motors).detach()[0]
+            next_state_values = torch.zeros(self.BATCH_SIZE, device=self.device)
+            next_state_values[non_final_mask] = self.target_net(non_final_next_state_overhead, non_final_next_state_wrist, non_final_next_state_motors).max(1)[0].detach()
             # Compute expected Q values
-            expected_state_action_values = (next_state_values * self.GAMMA) + (torch.atleast_2d(reward_batch).permute(1, 0))
+            expected_state_action_values = (next_state_values * self.GAMMA) + reward_batch
 
             # Compute Huber loss
             criterion = nn.SmoothL1Loss()
-            loss = criterion(state_action_batch, expected_state_action_values)
+            loss = criterion(state_action_batch[:, 0], expected_state_action_values)
 
             # Optimize the model
             self.optimizer.zero_grad()

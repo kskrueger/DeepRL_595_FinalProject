@@ -1,1 +1,0 @@
-/home/pks_97/catkin_rlp/devel/.private/franka_msgs/share/franka_msgs/msg/ErrorRecoveryGoal.msg
