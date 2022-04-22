@@ -14,9 +14,12 @@ def parse():
 
 
 def run(args):
-    env = PandaEnv()
+    overhead_shape = (180, 240, 4)
+    wrist_shape = (180, 240, 3)
+    motor_shape = (6, 1)
+    env = PandaEnv(overhead_shape, wrist_shape, motor_shape)
     if args.train_dqn:
-        agent = Agent_DQN(env, args)
+        agent = Agent_DQN(env, args, overhead_shape=overhead_shape, wrist_shape=wrist_shape, motor_shape=motor_shape)
         agent.train()
 
     if args.test_dqn:

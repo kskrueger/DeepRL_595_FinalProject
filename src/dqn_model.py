@@ -9,37 +9,39 @@ import torch.nn.functional as F
 
 
 class DQN(nn.Module):
-    def __init__(self):
+    def __init__(self, overhead_shape, wrist_shape, motor_shape):
         """
         Network is constructed here.
         """
         super(DQN, self).__init__()
 
         # 1 continuous action for each joint (-1 to 1), plus the gripper (<.5 or >.5)
-        self.NUM_ACTIONS = 8
-        self.OVERHEAD_CAM_SHAPE = (720, 960, 4)  # RGB-D Overhead Camera
-        self.WRIST_CAM_SHAPE = (720, 960, 3)  # RGB Wrist Camera
-        self.MOTOR_SIGNAL_SHAPE = 6  # 1 for each joint axis, twist, plus gripper fingers
+        self.NUM_ACTIONS = 5
+        self.OVERHEAD_CAM_SHAPE = overhead_shape  # RGB-D Overhead Camera
+        self.WRIST_CAM_SHAPE = wrist_shape  # RGB Wrist Camera
+        self.MOTOR_SIGNAL_SHAPE = motor_shape  # 1 for each joint axis, twist, plus gripper fingers
 
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
         # TODO: Set *all* the parameters below this line
         img_conv_channels_1 = 32
-        img_conv_channels_2 = 32
-        img_conv_channels_3 = 32
+        img_conv_channels_2 = 64
+        img_conv_channels_3 = 128
         img_max_pooling = (2, 2)
 
-        frame_merge_size = 0  # TODO: what is this concat/merged size?
+        frame_merge_size = img_conv_channels_3 * 2  # concat channel outputs of both(?)
         frame_merge_channels = 32
         frame_merge_dropout = .5
-        frame_merge_fc = 512
+        frame_merge_fc = 256
 
-        motor_fc_1 = 512
+        motor_fc_1 = 256
         motor_dropout = .5
-        motor_fc_2 = 512
+        motor_fc_2 = 256
 
-        final_merged_size = 0  # TODO: what is concat/merged size?
-        final_fc_1 = 512
+        assert frame_merge_fc == motor_fc_2
+
+        final_merged_size = 2*motor_fc_2  # 2 channels from concat of 2 FC vectors(?)
+        final_fc_1 = 256
         final_dropout = .5
         final_fc_2 = 512
         final_out_actions = self.NUM_ACTIONS
@@ -58,7 +60,7 @@ class DQN(nn.Module):
         ]))
 
         self.wrist_cam_net = nn.Sequential(OrderedDict([
-            ('conv1', nn.Conv2d(self.WRIST_CAM_SHAPE_CAM_SHAPE[2], img_conv_channels_1, kernel_size=(7, 7), stride=(2, 2))),
+            ('conv1', nn.Conv2d(self.WRIST_CAM_SHAPE[2], img_conv_channels_1, kernel_size=(7, 7), stride=(2, 2))),
             ('bn1', nn.BatchNorm2d(img_conv_channels_1)),
             ('relu1', nn.ReLU()),
             ('conv2', nn.Conv2d(img_conv_channels_1, img_conv_channels_2, kernel_size=(5, 5))),
@@ -70,18 +72,20 @@ class DQN(nn.Module):
             ('maxpool1', nn.MaxPool2d(img_max_pooling)),
         ]))
 
-        self.merged_frames_net = self.wrist_cam_net = nn.Sequential(OrderedDict([
+        self.merged_frames_net = nn.Sequential(OrderedDict([
             ('conv1', nn.Conv2d(frame_merge_size, frame_merge_channels, kernel_size=2)),  # TODO: kernel?
             ('relu1', nn.ReLU()),
             ('dropout1', nn.Dropout(frame_merge_dropout)),
-            ('fc1', nn.Linear(frame_merge_channels, frame_merge_fc)),
+            ('flatten', nn.Flatten()),
+            ('fc1', nn.Linear(67392, frame_merge_fc)),
             ('relu2', nn.ReLU()),
         ]))
 
         self.motor_net = nn.Sequential(OrderedDict([
-            ('fc1', nn.Linear(self.MOTOR_SIGNAL_SHAPE, motor_fc_1)),
+            ('fc1', nn.Linear(self.MOTOR_SIGNAL_SHAPE[0], motor_fc_1)),
             ('relu1', nn.ReLU()),
             ('dropout1', nn.Dropout(motor_dropout)),
+            ('flatten', nn.Flatten()),
             ('fc2', nn.Linear(motor_fc_1, motor_fc_2)),
             ('relu2', nn.ReLU()),
         ]))
@@ -109,22 +113,23 @@ class DQN(nn.Module):
         #     x = x.swapaxes(1, 3).astype(np.float32)
         #     x = torch.from_numpy(x)
 
-        overhead_frame_x = overhead_frame_x.to(self.device)
-        wrist_frame_x = wrist_frame_x.to(self.device)
-        motor_signals_x = motor_signals_x.to(self.device)
+        # overhead_frame_x = overhead_frame_x.to(self.device)
+        # wrist_frame_x = wrist_frame_x.to(self.device)
+        # motor_signals_x = motor_signals_x.to(self.device)
 
         overhead_out = self.overhead_cam_net.forward(overhead_frame_x)
         wrist_out = self.wrist_cam_net.forward(wrist_frame_x)
 
-        merge1_x = torch.cat([overhead_out, wrist_out], 1)
+        merge1_x = torch.cat([overhead_out, wrist_out], 1)  # order [batch, channels, h, w]
 
         merge1_out = self.merged_frames_net(merge1_x)
 
         motor_out = self.motor_net(motor_signals_x)
 
         merge2_x = torch.cat([merge1_out, motor_out], 1)
-
         final_out = self.final_net(merge2_x)
+
+        # TODO: clip the network output to the action_space values from env
 
         return final_out
 

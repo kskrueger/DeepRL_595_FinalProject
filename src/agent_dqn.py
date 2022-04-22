@@ -28,7 +28,7 @@ Transition = namedtuple('Transition', ('state', 'action', 'next_state', 'reward'
 
 
 class Agent_DQN(Agent):
-    def __init__(self, env, args):
+    def __init__(self, env, args, **kwargs):
         """
         Initialize all parameters for training here
         """
@@ -43,12 +43,12 @@ class Agent_DQN(Agent):
 
         self.BATCH_SIZE = 32
         self.GAMMA = 0.99  # discount factor
-        self.EPS_START = 1.0  # probability of choosing random action, start high for exploration
+        self.EPS_START = .99  # probability of choosing random action, start high for exploration
         self.EPS_END = .025  # low probability for random action means mostly exploitation at end
         self.EPS_DECAY = 10000000  # rate of decay, in STEPS
         self.EPS_STEP = (self.EPS_START - self.EPS_END) / self.EPS_DECAY
         self.TARGET_UPDATE = 5000  # how often to update target network (copies q_net weights)
-        self.REPLAY_MEMORY_SIZE = 10000
+        self.REPLAY_MEMORY_SIZE = 4000
         self.LEARNING_RATE = 1.5e-4
         self.NUM_EPISODES = 50000000
         self.SAVE_FREQ = 500
@@ -65,12 +65,12 @@ class Agent_DQN(Agent):
         self.state = (np.zeros((6, 1)), np.zeros((720, 960, 3)), np.zeros((720, 960, 4)))
 
         # Get number of actions from gym action space
-        self.n_actions = env.action_space.n
+        # self.n_actions = env.action_space_size
 
         # screen_height, screen_width
         num_frames = 4
-        self.policy_net = DQN().to(self.device)
-        self.target_net = DQN().to(self.device)
+        self.policy_net = DQN(**kwargs).to(self.device)
+        self.target_net = DQN(**kwargs).to(self.device)
         self.target_net.load_state_dict(self.policy_net.state_dict())
         self.target_net.eval()
 
@@ -94,7 +94,23 @@ class Agent_DQN(Agent):
         Return action from network (with noise from EPS)
         """
 
-        action = None
+        sample = random.random()
+
+        eps = self.eps_threshold
+        if test:
+            eps = self.test_eps
+
+        if sample > eps:
+            with torch.no_grad():
+                # overhead_frame_x, wrist_frame_x, motor_signals_x
+                action = self.policy_net(observation['overhead'], observation['wrist'], observation['motors'])
+        else:
+            action = torch.tensor([self.env.action_space.sample()], device=self.device, dtype=torch.float32)
+
+        # if test:
+        #     action = action.detach().cpu().numpy()[0][0]
+
+        action = action.detach().cpu().numpy()[0, :]
 
         return action
 
@@ -122,16 +138,19 @@ class Agent_DQN(Agent):
 
             # Compute mask of non-final states and concatenate the batch elements
             # (a final state would've been the one after which simulation ended)
-            non_final_mask = torch.tensor(tuple(map(lambda s: s is not None, batch.next_state)), device=self.device,
-                                          dtype=torch.bool)
-            non_final_next_states = torch.cat([s for s in batch.next_state if s is not None])
-            state_batch = torch.cat(batch.state)
+            non_final_mask = torch.tensor(tuple(map(lambda s: s is not None, batch.next_state)), device=self.device, dtype=torch.bool)
+            non_final_next_state_overhead = torch.cat([s['overhead'] for s in batch.next_state if s is not None])
+            non_final_next_state_wrist = torch.cat([s['wrist'] for s in batch.next_state if s is not None])
+            non_final_next_state_motors = torch.cat([s['motors'] for s in batch.next_state if s is not None])
+            state_overhead_batch = torch.cat(batch.state['overhead'])
+            state_wrist_batch = torch.cat(batch.state['wrist'])
+            state_motor_batch = torch.cat(batch.state['motors'])
             action_batch = torch.cat(batch.action)
             reward_batch = torch.cat(batch.reward)
 
             # Compute Q(s_t, a) - the model computes Q(s_t), then we select the columns of actions taken.
             # These are the actions which would've been taken for each batch state according to policy_net
-            state_action_batch = self.policy_net(state_batch).gather(1, action_batch)
+            state_action_batch = self.policy_net(state_overhead_batch, state_wrist_batch, state_motor_batch).gather(1, action_batch)
 
             # Compute V(s_{t+1}) values for all next states.
             # Expected values of actions for non_final_next_states are computed based on the "older" target_net;
@@ -139,7 +158,7 @@ class Agent_DQN(Agent):
             # This is merged based on the mask, such that we'll have either the expected state value or 0 in case the state was final.
             next_state_values = torch.zeros(self.BATCH_SIZE, device=self.device)
             # TODO: Remove the max() when doing continuous outputs
-            next_state_values[non_final_mask] = self.target_net(non_final_next_states).max(1)[0].detach()
+            next_state_values[non_final_mask] = self.target_net(non_final_next_state_overhead, non_final_next_state_wrist, non_final_next_state_motors).detach()[0]
             # Compute expected Q values
             expected_state_action_values = (next_state_values * self.GAMMA) + reward_batch
 
@@ -173,76 +192,81 @@ class Agent_DQN(Agent):
 
             plt.pause(0.001)  # pause a bit so that plots are updated
 
-        try:
-            for i_episode in range(self.NUM_EPISODES):
-                # Init environment and state
-                self.state = self.env.reset()
-                self.state = torch.tensor(np.swapaxes(np.array([self.state]), 3, 1), dtype=torch.float32,
-                                          device=self.device)
+        # try:
+        for i_episode in range(self.NUM_EPISODES):
+            # Init environment and state
+            self.state = self.env.reset()
+            self.state['motors'] = torch.tensor(np.array([self.state['motors']]), dtype=torch.float32,
+                                                device=self.device)
+            self.state['overhead'] = torch.tensor(np.swapaxes(np.array([self.state['overhead']]), 3, 1),
+                                                  dtype=torch.float32, device=self.device)
+            self.state['wrist'] = torch.tensor(np.swapaxes(np.array([self.state['wrist']]), 3, 1),
+                                               dtype=torch.float32, device=self.device)
 
-                score = 0
-                for t in count():
-                    # Select and perform action
-                    action = self.make_action(self.state, test=False)
-                    next_state, reward, done, _ = self.env.step(action.item())
-                    score += reward
-                    self.steps_done += 1
+            score = 0
+            for t in count():
+                # Select and perform action
+                action = self.make_action(self.state, test=False)
+                next_state, reward, done, _ = self.env.step(action)
+                score += reward
+                self.steps_done += 1
 
-                    if self.steps_done > self.REPLAY_MEMORY_SIZE:
-                        self.eps_threshold = max(self.EPS_END, self.EPS_START - (self.EPS_STEP * self.steps_done))
+                if self.steps_done > self.REPLAY_MEMORY_SIZE:
+                    self.eps_threshold = max(self.EPS_END, self.EPS_START - (self.EPS_STEP * self.steps_done))
 
-                    next_state = torch.tensor(np.swapaxes(np.array([next_state]), 3, 1), dtype=torch.float32,
-                                              device=self.device)
+                next_state['motors'] = torch.tensor(np.array([next_state['motors']]), dtype=torch.float32, device=self.device)
+                next_state['overhead'] = torch.tensor(np.swapaxes(np.array([next_state['overhead']]), 3, 1), dtype=torch.float32, device=self.device)
+                next_state['wrist'] = torch.tensor(np.swapaxes(np.array([next_state['wrist']]), 3, 1), dtype=torch.float32, device=self.device)
 
-                    reward = torch.tensor([reward], device=self.device)
+                reward = torch.tensor([reward], device=self.device)
 
-                    # Observe new state
-                    if done:
-                        next_state = None
+                # Observe new state
+                if done:
+                    next_state = None
 
-                    # Store transition in memory
-                    self.push(self.state, action, next_state, reward)
+                # Store transition in memory
+                self.push(self.state, action, next_state, reward)
 
-                    # Move to next state
-                    self.state = next_state
+                # Move to next state
+                self.state = next_state
 
-                    # Perform one step of optimization on policy network
-                    if self.steps_done > self.START_TRAIN and self.steps_done % self.NETWORK_TRAIN_INTERVAL == 0:
-                        loss = optimize_model()
-                        self.losses.append(loss)
+                # Perform one step of optimization on policy network
+                if self.steps_done > self.START_TRAIN and self.steps_done % self.NETWORK_TRAIN_INTERVAL == 0:
+                    loss = optimize_model()
+                    self.losses.append(loss)
 
-                    if done:
-                        self.episode_durations.append(t + 1)
-                        self.scores.append(score)
+                if done:
+                    self.episode_durations.append(t + 1)
+                    self.scores.append(score)
 
-                        log_data = (i_episode, self.steps_done,
-                                    t + 1, round(
-                            np.mean(self.episode_durations[-100:]) if len(self.episode_durations) > 100 else 0, 2),
-                                    round(self.eps_threshold, 4),
-                                    score, round(np.mean(self.scores[-100:]) if len(self.scores) > 100 else 0, 2),
-                                    np.round(loss, 4) if len(self.losses) > 0 else "None",
-                                    "Training" if self.steps_done > self.START_TRAIN else "Fill Buffer")
+                    log_data = (i_episode, self.steps_done,
+                                t + 1, round(
+                        np.mean(self.episode_durations[-min(len(self.episode_durations), 100):]), 2),
+                                round(self.eps_threshold, 4),
+                                score, round(np.mean(self.scores[-min(len(self.scores), 100):]), 2),
+                                np.round(loss, 4) if len(self.losses) > 0 else "None",
+                                "Training" if self.steps_done > self.START_TRAIN else "Fill Buffer")
 
-                        print("Episode: {}, Steps: {}, Duration: {}, Avg Duration: {}, Eps: {}, Score: {}, "
-                              "Avg Score: {}, Loss: {}, Mode: {}".format(*log_data))
-                        self.logs.append(log_data)
-                        # plot_durations()
-                        break
+                    print("Episode: {}, Steps: {}, Duration: {}, Avg Duration: {}, Eps: {}, Score: {}, "
+                          "Avg Score: {}, Loss: {}, Mode: {}".format(*log_data))
+                    self.logs.append(log_data)
+                    # plot_durations()
+                    break
 
-                # Update target network, copying all weights and biases in DQN
-                if i_episode % self.TARGET_UPDATE == 0:
-                    print("Update target network!")
-                    self.target_net.load_state_dict(self.policy_net.state_dict())
-                if i_episode % self.SAVE_FREQ == 0:
-                    torch.save(self.policy_net.state_dict(), self.network_name)
-                    torch.save(self.target_net.state_dict(), self.network_name)
-                    np.save("{}_durations".format(self.network_name), np.array(self.episode_durations))
-                    np.save("{}_scores".format(self.network_name), np.array(self.scores))
-                    np.save("{}_logs".format(self.network_name), np.array(self.logs))
-                    print("Saved networks")
-        except Exception as e:
-            print(e)
-            print("Cancelled")
+            # Update target network, copying all weights and biases in DQN
+            if i_episode % self.TARGET_UPDATE == 0:
+                print("Update target network!")
+                self.target_net.load_state_dict(self.policy_net.state_dict())
+            if i_episode % self.SAVE_FREQ == 0:
+                torch.save(self.policy_net.state_dict(), self.network_name)
+                torch.save(self.target_net.state_dict(), self.network_name)
+                np.save("{}_durations".format(self.network_name), np.array(self.episode_durations))
+                np.save("{}_scores".format(self.network_name), np.array(self.scores))
+                np.save("{}_logs".format(self.network_name), np.array(self.logs))
+                print("Saved networks")
+        # except Exception as e:
+        #     print(e)
+        #     print("Cancelled")
 
         np.save("{}_durations".format(self.network_name), np.array(self.logs))
         # np.save("{}_durations".format(self.network_name), np.array(self.episode_durations))
