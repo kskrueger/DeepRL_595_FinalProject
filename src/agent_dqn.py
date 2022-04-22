@@ -35,24 +35,24 @@ class Agent_DQN(Agent):
 
         super(Agent_DQN, self).__init__(env)
 
-        self.network_name = "Project4_0"  # increment this number before training again
+        self.network_name = "Project4_1"  # increment this number before training again
         self.episode_durations = []
         self.logs = []
         self.scores = []
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-        self.BATCH_SIZE = 32
+        self.BATCH_SIZE = 16
         self.GAMMA = 0.99  # discount factor
         self.EPS_START = .99  # probability of choosing random action, start high for exploration
         self.EPS_END = .025  # low probability for random action means mostly exploitation at end
-        self.EPS_DECAY = 10000000  # rate of decay, in STEPS
+        self.EPS_DECAY = 1000000  # rate of decay, in STEPS
         self.EPS_STEP = (self.EPS_START - self.EPS_END) / self.EPS_DECAY
         self.TARGET_UPDATE = 5000  # how often to update target network (copies q_net weights)
-        self.REPLAY_MEMORY_SIZE = 4000
+        self.REPLAY_MEMORY_SIZE = 2000
         self.LEARNING_RATE = 1.5e-4
         self.NUM_EPISODES = 50000000
         self.SAVE_FREQ = 500
-        self.START_TRAIN = 5000
+        self.START_TRAIN = 50
         self.NETWORK_TRAIN_INTERVAL = 10
         self.eps_threshold = self.EPS_START
 
@@ -71,6 +71,10 @@ class Agent_DQN(Agent):
         num_frames = 4
         self.policy_net = DQN(**kwargs).to(self.device)
         self.target_net = DQN(**kwargs).to(self.device)
+
+        # self.policy_net.load_state_dict(torch.load("Project4_1", map_location=self.device))
+        # self.target_net.load_state_dict(torch.load("Project4_1", map_location=self.device))
+
         self.target_net.load_state_dict(self.policy_net.state_dict())
         self.target_net.eval()
 
@@ -105,12 +109,12 @@ class Agent_DQN(Agent):
                 # overhead_frame_x, wrist_frame_x, motor_signals_x
                 action = self.policy_net(observation['overhead'], observation['wrist'], observation['motors'])
         else:
-            action = torch.tensor([self.env.action_space.sample()], device=self.device, dtype=torch.float32)
+            action = torch.tensor(np.array([self.env.action_space.sample()]), device=self.device, dtype=torch.float32)
 
         # if test:
         #     action = action.detach().cpu().numpy()[0][0]
 
-        action = action.detach().cpu().numpy()[0, :]
+        action = action.detach()[0]
 
         return action
 
@@ -142,29 +146,29 @@ class Agent_DQN(Agent):
             non_final_next_state_overhead = torch.cat([s['overhead'] for s in batch.next_state if s is not None])
             non_final_next_state_wrist = torch.cat([s['wrist'] for s in batch.next_state if s is not None])
             non_final_next_state_motors = torch.cat([s['motors'] for s in batch.next_state if s is not None])
-            state_overhead_batch = torch.cat(batch.state['overhead'])
-            state_wrist_batch = torch.cat(batch.state['wrist'])
-            state_motor_batch = torch.cat(batch.state['motors'])
-            action_batch = torch.cat(batch.action)
+            state_overhead_batch = torch.cat([s['overhead'] for s in batch.state])
+            state_wrist_batch = torch.cat([s['wrist'] for s in batch.state])
+            state_motor_batch = torch.cat([s['motors'] for s in batch.state])
+            action_batch = torch.stack(batch.action, dim=0)  # motor control values from the batch
             reward_batch = torch.cat(batch.reward)
 
             # Compute Q(s_t, a) - the model computes Q(s_t), then we select the columns of actions taken.
             # These are the actions which would've been taken for each batch state according to policy_net
-            state_action_batch = self.policy_net(state_overhead_batch, state_wrist_batch, state_motor_batch).gather(1, action_batch)
+            state_action_batch = self.policy_net(state_overhead_batch, state_wrist_batch, state_motor_batch)#.gather(1, action_batch)  # what latest network thinks the motors should be
 
             # Compute V(s_{t+1}) values for all next states.
             # Expected values of actions for non_final_next_states are computed based on the "older" target_net;
             # selecting their best reward with max(1)[0].
             # This is merged based on the mask, such that we'll have either the expected state value or 0 in case the state was final.
-            next_state_values = torch.zeros(self.BATCH_SIZE, device=self.device)
+            next_state_values = torch.zeros((self.BATCH_SIZE, 5), device=self.device)
             # TODO: Remove the max() when doing continuous outputs
             next_state_values[non_final_mask] = self.target_net(non_final_next_state_overhead, non_final_next_state_wrist, non_final_next_state_motors).detach()[0]
             # Compute expected Q values
-            expected_state_action_values = (next_state_values * self.GAMMA) + reward_batch
+            expected_state_action_values = (next_state_values * self.GAMMA) + (torch.atleast_2d(reward_batch).permute(1, 0))
 
             # Compute Huber loss
             criterion = nn.SmoothL1Loss()
-            loss = criterion(state_action_batch, expected_state_action_values.unsqueeze(1))
+            loss = criterion(state_action_batch, expected_state_action_values)
 
             # Optimize the model
             self.optimizer.zero_grad()
@@ -258,16 +262,16 @@ class Agent_DQN(Agent):
                 print("Update target network!")
                 self.target_net.load_state_dict(self.policy_net.state_dict())
             if i_episode % self.SAVE_FREQ == 0:
-                torch.save(self.policy_net.state_dict(), self.network_name)
-                torch.save(self.target_net.state_dict(), self.network_name)
-                np.save("{}_durations".format(self.network_name), np.array(self.episode_durations))
-                np.save("{}_scores".format(self.network_name), np.array(self.scores))
+                torch.save(self.policy_net.state_dict(), self.network_name+"_policy")
+                torch.save(self.target_net.state_dict(), self.network_name+"_target")
+                # np.save("{}_durations".format(self.network_name), np.array(self.episode_durations))
+                # np.save("{}_scores".format(self.network_name), np.array(self.scores))
                 np.save("{}_logs".format(self.network_name), np.array(self.logs))
                 print("Saved networks")
         # except Exception as e:
         #     print(e)
         #     print("Cancelled")
 
-        np.save("{}_durations".format(self.network_name), np.array(self.logs))
+        np.save("{}_logs".format(self.network_name), np.array(self.logs))
         # np.save("{}_durations".format(self.network_name), np.array(self.episode_durations))
         # np.save("{}_durations".format(self.network_name), np.array(self.scores))
