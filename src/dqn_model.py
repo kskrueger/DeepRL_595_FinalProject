@@ -108,10 +108,18 @@ class DQN(nn.Module):
         """
 
         # TODO: This convert might not be needed if bug is fixed in test code before this
-        # if type(x) is np.ndarray:
-        #     x = np.array([x])
-        #     x = x.swapaxes(1, 3).astype(np.float32)
-        #     x = torch.from_numpy(x)
+        if type(overhead_frame_x) is np.ndarray:
+            overhead_frame_x = np.array([overhead_frame_x])
+            overhead_frame_x = overhead_frame_x.swapaxes(1, 3).astype(np.float32)
+            overhead_frame_x = torch.from_numpy(overhead_frame_x)
+
+            wrist_frame_x = np.array([wrist_frame_x])
+            wrist_frame_x = wrist_frame_x.swapaxes(1, 3).astype(np.float32)
+            wrist_frame_x = torch.from_numpy(wrist_frame_x)
+
+            motor_signals_x = np.array([motor_signals_x]).astype(np.float32)  # input (1,6)
+            # motor_signals_x = motor_signals_x.swapaxes(1, 3).astype(np.float32)
+            motor_signals_x = torch.from_numpy(motor_signals_x)  # (16,1,6)
 
         # overhead_frame_x = overhead_frame_x.to(self.device)
         # wrist_frame_x = wrist_frame_x.to(self.device)

@@ -23,7 +23,7 @@ def run(args):
         agent.train()
 
     if args.test_dqn:
-        agent = Agent_DQN(env, args)
+        agent = Agent_DQN(env, args, overhead_shape=overhead_shape, wrist_shape=wrist_shape, motor_shape=motor_shape)
         test(agent, env, total_episodes=100)
 
 

@@ -24,14 +24,14 @@ class PandaEnv(gym.Env):
         p.resetDebugVisualizerCamera(cameraDistance=1.5, cameraYaw=0, cameraPitch=-40,
                                      cameraTargetPosition=[0.55, -0.35, 0.2])
         self.action_space = spaces.Discrete(8)  # +/- for each 3 axis, rotation, and gripper
-        self.discrete_actions_steps = [[-.1, 0, 0, 0, 1],
-                                       [.1, 0, 0, 0, 1],
-                                       [0, -.1, 0, 0, 1],
-                                       [0, .1, 0, 0, 1],
-                                       [0, 0, .1, 0, 1],
-                                       [0, 0, -.1, 0, 1],
-                                       # [0, 0, 0, .1, 1],
-                                       # [0, 0, 0, -.1, 1],
+        self.discrete_actions_steps = [[-0.5, 0, 0, 0, 1],
+                                       [0.5, 0, 0, 0, 1],
+                                       [0, -0.5, 0, 0, 1],
+                                       [0, 0.5, 0, 0, 1],
+                                       [0, 0, 0.5, 0, 1],
+                                       [0, 0, -0.5, 0, 1],
+                                       # [0, 0, 0, 0.5, 1],
+                                       # [0, 0, 0, -0.5, 1],
                                        [0, 0, 0, 0, 1],
                                        [0, 0, 0, 0, 0]]
         self.observation_space = {'wrist': spaces.Box(np.zeros(wrist_shape), np.ones(wrist_shape)),
@@ -47,8 +47,14 @@ class PandaEnv(gym.Env):
         planeUid = p.loadURDF(os.path.join(urdfRootPath, "plane.urdf"), basePosition=[0, 0, -0.65])
 
         reset_fingers = .03
+
         rest_poses = [0, -0.215, 0, -2.57, 0, 2.356, 2.356, 0.08, 0.08]
         self.pandaUid = p.loadURDF(os.path.join(urdfRootPath, "franka_panda/panda.urdf"), useFixedBase=True)
+        orientation = p.getQuaternionFromEuler([0, -math.pi, np.pi/2])
+        start_position = [.5, 0, .2]
+        # new_position = [.5, 0, .5]
+        # rest_poses = p.calculateInverseKinematics(self.pandaUid, 11, start_position, orientation)[:7]
+        self.last_position = start_position.copy()
         for i in range(7):
             p.resetJointState(self.pandaUid, i, rest_poses[i])
 
@@ -56,6 +62,7 @@ class PandaEnv(gym.Env):
         p.resetJointState(self.pandaUid, 10, reset_fingers)
         for i in range(10):
             p.stepSimulation()
+
 
         tableUid = p.loadURDF(os.path.join(urdfRootPath, "table/table.urdf"), basePosition=[0.5, 0, -0.65])
 
@@ -70,6 +77,11 @@ class PandaEnv(gym.Env):
         p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1)  # rendering's back on again
 
         observation = self.get_observation(state_robot, robot_state_obs)
+
+        # print("robot_state_obs", robot_state_obs)
+        # print("THERE")
+        # time.sleep(10)
+        self.last_position = robot_state_obs[:3]
 
         return observation
 
@@ -87,13 +99,15 @@ class PandaEnv(gym.Env):
         current_pose = p.getLinkState(self.pandaUid, 11)
         current_angles = p.getEulerFromQuaternion(current_pose[1])
         current_twist = current_angles[2]
-        current_position = current_pose[1]
+        # current_position = current_pose[1]
+        current_position = self.last_position.copy()
         # print("The dx = {}, dy = {}, dz = {}".format(dx, dy, dz))
         # print("current_position", current_position)
         orientation = p.getQuaternionFromEuler([0, -math.pi, np.pi/2])
         new_position = [current_position[0] + dx,
                         current_position[1] + dy,
                         current_position[2] + dz]
+        self.last_position = new_position.copy()
         # new_position = [.5, 0, .5]
         joint_poses = p.calculateInverseKinematics(self.pandaUid, 11, new_position, orientation)[:7]
 

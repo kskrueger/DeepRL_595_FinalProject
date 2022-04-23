@@ -58,6 +58,7 @@ class Agent_DQN(Agent):
         self.eps_threshold = self.EPS_START
 
         self.steps_done = 0
+        self.test_eps = .02
 
         self.losses = []
         self.memory = deque([], maxlen=self.REPLAY_MEMORY_SIZE)
@@ -84,8 +85,8 @@ class Agent_DQN(Agent):
         if args.test_dqn:
             print('loading trained model')
 
-            self.policy_net.load_state_dict(torch.load("weightsFile", map_location=self.device))
-            self.target_net.load_state_dict(torch.load("weightsFile", map_location=self.device))
+            self.policy_net.load_state_dict(torch.load("/Users/kskrueger/Projects/DeepRL_595_FinalProject/src/Project4_2_target", map_location=self.device))
+            self.target_net.load_state_dict(torch.load("/Users/kskrueger/Projects/DeepRL_595_FinalProject/src/Project4_2_target", map_location=self.device))
 
     def init_game_setting(self):
         """
