@@ -151,7 +151,7 @@ class PandaEnv(gym.Env):
         TRIED_FAILED_GRASP_REWARD = min(20, 1 / np.linalg.norm(
             np.array(state_robot[:3]) - np.array(state_object[:3])))  # 30
         TIMESTEP_PENALTY = 0  # -.01
-        MIN_TOUCH_DIST = 1
+        MIN_TOUCH_DIST = .4
         BAD_GRIP_PENTALY = -5
         MAX_TRIES = 50
         SINGULARITY_PENALTY = -10
