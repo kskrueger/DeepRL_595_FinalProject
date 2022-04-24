@@ -35,14 +35,14 @@ class DQN(nn.Module):
         frame_merge_fc = 256
 
         motor_fc_1 = 256
-        motor_dropout = .5
+        motor_dropout = .25
         motor_fc_2 = 256
 
         assert frame_merge_fc == motor_fc_2
 
         final_merged_size = 2*motor_fc_2  # 2 channels from concat of 2 FC vectors(?)
         final_fc_1 = 256
-        final_dropout = .5
+        final_dropout = .25
         final_fc_2 = 512
         final_out_actions = self.NUM_ACTIONS
 

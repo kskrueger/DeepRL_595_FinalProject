@@ -34,9 +34,15 @@ class PandaEnv(gym.Env):
                                        # [0, 0, 0, -0.5, 1],
                                        [0, 0, 0, 0, 1],
                                        [0, 0, 0, 0, 0]]
+
+        self.min_limits = [.35, -.25, 0]
+        self.max_limits = [.85, .25, .75]
+
+        self.start_position = [.6, 0, .3]
+
         self.observation_space = {'wrist': spaces.Box(np.zeros(wrist_shape), np.ones(wrist_shape)),
                                   'overhead': spaces.Box(np.zeros(overhead_shape), np.ones(overhead_shape)),
-                                  'motors': spaces.Box(np.zeros(motor_shape), np.ones(motor_shape))}  # TODO: fix this?
+                                  'motors': spaces.Box(np.zeros(motor_shape), np.ones(motor_shape))}
 
     def reset(self, **kwargs):
         p.resetSimulation()
@@ -50,25 +56,30 @@ class PandaEnv(gym.Env):
 
         rest_poses = [0, -0.215, 0, -2.57, 0, 2.356, 2.356, 0.08, 0.08]
         self.pandaUid = p.loadURDF(os.path.join(urdfRootPath, "franka_panda/panda.urdf"), useFixedBase=True)
-        orientation = p.getQuaternionFromEuler([0, -math.pi, np.pi/2])
-        start_position = [.5, 0, .2]
+        orientation = p.getQuaternionFromEuler([0, -math.pi, np.pi / 2])
+        # start_position = [.5, 0, .2]
         # new_position = [.5, 0, .5]
-        # rest_poses = p.calculateInverseKinematics(self.pandaUid, 11, start_position, orientation)[:7]
-        self.last_position = start_position.copy()
+
+        random_arm_start = [random.uniform(self.min_limits[0] + .05, self.max_limits[0] - .05),
+                            random.uniform(self.min_limits[1] + .05, self.max_limits[1] + .05),
+                            random.uniform(.4, .7)]
+
+        # rest_poses = p.calculateInverseKinematics(self.pandaUid, 11, self.start_position, orientation)[:7]
+        self.last_position = self.start_position.copy()
         for i in range(7):
             p.resetJointState(self.pandaUid, i, rest_poses[i])
 
         p.resetJointState(self.pandaUid, 9, reset_fingers)
         p.resetJointState(self.pandaUid, 10, reset_fingers)
-        for i in range(10):
-            p.stepSimulation()
 
+        self.move_to(random_arm_start)
 
         tableUid = p.loadURDF(os.path.join(urdfRootPath, "table/table.urdf"), basePosition=[0.5, 0, -0.65])
 
-        trayUid = p.loadURDF(os.path.join(urdfRootPath, "tray/traybox.urdf"), basePosition=[0.65, 0, 0])
+        # trayUid = p.loadURDF(os.path.join(urdfRootPath, "tray/traybox.urdf"), basePosition=[0.65, 0, 0])
 
-        state_object = [random.uniform(0.5, 0.8), random.uniform(-0.2, 0.2), 0.05]
+        state_object = [random.uniform(self.min_limits[0] + .05, self.max_limits[0] - .05),
+                        random.uniform(self.min_limits[1] + .05, self.max_limits[1] + .05), 0.03]
         self.objectUid = p.loadURDF(os.path.join(urdfRootPath, "random_urdfs/000/000.urdf"), basePosition=state_object)
         state_robot = p.getLinkState(self.pandaUid, 11)[0]
         state_fingers = (p.getJointState(self.pandaUid, 9)[0], p.getJointState(self.pandaUid, 10)[0])
@@ -89,7 +100,7 @@ class PandaEnv(gym.Env):
         action = self.discrete_actions_steps[discrete_action_idx]
         # print("action", action)
         p.configureDebugVisualizer(p.COV_ENABLE_SINGLE_STEP_RENDERING)
-        dv = 0.05
+        dv = 0.1
         dx = action[0] * dv
         dy = action[1] * dv
         dz = action[2] * dv
@@ -103,13 +114,13 @@ class PandaEnv(gym.Env):
         current_position = self.last_position.copy()
         # print("The dx = {}, dy = {}, dz = {}".format(dx, dy, dz))
         # print("current_position", current_position)
-        orientation = p.getQuaternionFromEuler([0, -math.pi, np.pi/2])
+        # orientation = p.getQuaternionFromEuler([0, -math.pi, np.pi / 2])
         new_position = [current_position[0] + dx,
                         current_position[1] + dy,
                         current_position[2] + dz]
         self.last_position = new_position.copy()
         # new_position = [.5, 0, .5]
-        joint_poses = p.calculateInverseKinematics(self.pandaUid, 11, new_position, orientation)[:7]
+        # joint_poses = p.calculateInverseKinematics(self.pandaUid, 11, new_position, orientation)[:7]
 
         # make the fingers binary
         end = False
@@ -121,15 +132,36 @@ class PandaEnv(gym.Env):
 
         # print("fingers(after >.5)", fingers)
 
-        p.setJointMotorControlArray(self.pandaUid, list(range(7)) + [9, 10], p.POSITION_CONTROL,
-                                    list(joint_poses) + 2 * [fingers])
+        # p.setJointMotorControlArray(self.pandaUid, list(range(7)) + [9, 10], p.POSITION_CONTROL,
+        #                             list(joint_poses) + 2 * [fingers])
 
-        for s_i in range(5 if end else 1):
-            p.stepSimulation()
-            p.configureDebugVisualizer(p.COV_ENABLE_SINGLE_STEP_RENDERING)
+        # for s_i in range(5 if end else 1):
+        #     p.stepSimulation()
+        #     p.configureDebugVisualizer(p.COV_ENABLE_SINGLE_STEP_RENDERING)
 
         # if end:
         #     time.sleep(5)
+
+        # Small penalty if robot tries to go outside limits
+        if np.any(new_position > self.max_limits) or np.any(new_position < self.min_limits):
+            reward = -1  # "no action execute"
+
+            state_object, _ = p.getBasePositionAndOrientation(self.objectUid)
+            state_robot = p.getLinkState(self.pandaUid, 11)[0]
+            state_joint_angles = p.getEulerFromQuaternion(p.getLinkState(self.pandaUid, 11)[1])
+            state_fingers = (p.getJointState(self.pandaUid, 9)[0] / .03, p.getJointState(self.pandaUid, 10)[0] / .03)
+
+            info = state_object
+            robot_state_obs = np.array([*state_robot, state_joint_angles[2], *state_fingers])
+
+            observation = self.get_observation(state_robot, robot_state_obs)
+
+            done = False
+
+            return observation, reward, done, info
+
+        # ELSE: the robot is taking a valid action
+        self.move_to(new_position, fingers=fingers)
 
         state_object, _ = p.getBasePositionAndOrientation(self.objectUid)
         state_robot = p.getLinkState(self.pandaUid, 11)[0]
@@ -146,54 +178,31 @@ class PandaEnv(gym.Env):
         #           - Each timestep is small negative reward
 
         # TODO: add out reward function values here
-        LIFT_HEIGHT = .5
-        SUCCESS_GRASP_REWARD = 100
-        # TRIED_FAILED_GRASP_REWARD = min(20, 1 / np.linalg.norm(
-        #     np.array(state_robot[:3]) - np.array(state_object[:3])))  # 30
-        TIMESTEP_PENALTY = 0  # -.01
-        MIN_TOUCH_DIST = .2
-        BAD_GRIP_PENTALY = -1
-        MAX_TRIES = 50
-        SINGULARITY_PENALTY = -10
+        LIFT_HEIGHT = .3
+        SUCCESS_GRASP_REWARD = 10
+        MIN_TOUCH_DIST = .05
+        PARTIAL_PICK_REWARD = 1
+        TIMESTEP_PENALTY = -.025
 
-        # Give a penalty for every step
         if end:
-        # if state_fingers[0] > .8:
             done = True  # end the episode because the fingers closed
 
             new_position[2] = LIFT_HEIGHT
-            joint_poses = p.calculateInverseKinematics(self.pandaUid, 11, new_position, orientation)[:7]
-            p.setJointMotorControlArray(self.pandaUid, list(range(7)) + [9, 10], p.POSITION_CONTROL,
-                                        list(joint_poses) + 2 * [fingers])
+            self.move_to(new_position, fingers=fingers)
 
-            i = 0
-            while True:
-                p.stepSimulation()
+            state_object, _ = p.getBasePositionAndOrientation(self.objectUid)
+            state_robot = p.getLinkState(self.pandaUid, 11)[0]
+        else:
+            done = False
 
-                # p.setJointMotorControlArray(self.pandaUid, list(range(7)) + [9, 10], p.POSITION_CONTROL,
-                #                             list(joint_poses) + 2 * [fingers])
-
-                state_object, _ = p.getBasePositionAndOrientation(self.objectUid)
-                state_robot = p.getLinkState(self.pandaUid, 11)[0]
-                # print("stateRobot", state_robot)
-                if state_robot[2] > LIFT_HEIGHT - .1:
-                    break
-                if i > MAX_TRIES:
-                    break
-                i += 1
-
-            if i > MAX_TRIES:
-                reward = SINGULARITY_PENALTY
-            elif state_object[2] > LIFT_HEIGHT - .2:
-                reward = SUCCESS_GRASP_REWARD
-            elif np.linalg.norm(np.array(self.last_position[:3]) - np.array(state_object[:3])) < MIN_TOUCH_DIST:
-                TRIED_FAILED_GRASP_REWARD = min(20, 1 / np.linalg.norm(np.array(self.last_position[:3]) - np.array(state_object[:3])))
-                reward = TRIED_FAILED_GRASP_REWARD
-            else:
-                reward = BAD_GRIP_PENTALY
+        if state_object[2] > LIFT_HEIGHT - .15:
+            # successful pick
+            reward = SUCCESS_GRASP_REWARD
+        elif np.linalg.norm(np.array(self.last_position[:3]) - np.array(state_object[:3])) < MIN_TOUCH_DIST:
+            # partial pick
+            reward = PARTIAL_PICK_REWARD
         else:
             reward = TIMESTEP_PENALTY  # or add step penalty
-            done = False
 
         info = state_object
         robot_state_obs = np.array([*state_robot, state_joint_angles[2], *state_fingers])
@@ -282,3 +291,14 @@ class PandaEnv(gym.Env):
 
         rgb_array = rgb_array[:, :, 3]
         return rgb_array
+
+    def move_to(self, position, angles=(0, -math.pi, np.pi / 2), fingers=.03):
+        orientation = p.getQuaternionFromEuler(angles)
+        joint_poses = p.calculateInverseKinematics(self.pandaUid, 11, position, orientation)[:7]
+
+        p.setJointMotorControlArray(self.pandaUid, list(range(7)) + [9, 10], p.POSITION_CONTROL,
+                                    list(joint_poses) + 2 * [fingers])
+
+        for s_i in range(25):
+            p.stepSimulation()
+            p.configureDebugVisualizer(p.COV_ENABLE_SINGLE_STEP_RENDERING)
