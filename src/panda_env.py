@@ -148,11 +148,11 @@ class PandaEnv(gym.Env):
         # TODO: add out reward function values here
         LIFT_HEIGHT = .5
         SUCCESS_GRASP_REWARD = 100
-        TRIED_FAILED_GRASP_REWARD = min(20, 1 / np.linalg.norm(
-            np.array(state_robot[:3]) - np.array(state_object[:3])))  # 30
+        # TRIED_FAILED_GRASP_REWARD = min(20, 1 / np.linalg.norm(
+        #     np.array(state_robot[:3]) - np.array(state_object[:3])))  # 30
         TIMESTEP_PENALTY = 0  # -.01
-        MIN_TOUCH_DIST = .4
-        BAD_GRIP_PENTALY = -5
+        MIN_TOUCH_DIST = .2
+        BAD_GRIP_PENTALY = -1
         MAX_TRIES = 50
         SINGULARITY_PENALTY = -10
 
@@ -186,7 +186,8 @@ class PandaEnv(gym.Env):
                 reward = SINGULARITY_PENALTY
             elif state_object[2] > LIFT_HEIGHT - .2:
                 reward = SUCCESS_GRASP_REWARD
-            elif np.linalg.norm(np.array(state_robot[:3]) - np.array(state_object[:3])) < MIN_TOUCH_DIST:
+            elif np.linalg.norm(np.array(self.last_position[:3]) - np.array(state_object[:3])) < MIN_TOUCH_DIST:
+                TRIED_FAILED_GRASP_REWARD = min(20, 1 / np.linalg.norm(np.array(self.last_position[:3]) - np.array(state_object[:3])))
                 reward = TRIED_FAILED_GRASP_REWARD
             else:
                 reward = BAD_GRIP_PENTALY
