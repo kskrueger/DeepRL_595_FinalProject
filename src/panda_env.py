@@ -35,8 +35,8 @@ class PandaEnv(gym.Env):
                                        # [0, 0, 0, 0, 1],
                                        [0, 0, 0, 0, 0]]
 
-        self.min_limits = [.35, -.25, 0]
-        self.max_limits = [.85, .25, .75]
+        self.min_limits = np.array([.35, -.25, 0])
+        self.max_limits = np.array([.85, .25, .5])
 
         self.start_position = [.6, 0, .3]
         self.step_count = 0
@@ -146,7 +146,7 @@ class PandaEnv(gym.Env):
         #     time.sleep(5)
 
         # Small penalty if robot tries to go outside limits
-        if np.any(new_position > self.max_limits) or np.any(new_position < self.min_limits):
+        if np.any(np.array(new_position) > self.max_limits) or np.any(np.array(new_position) < self.min_limits):
             reward = -5  # "no action execute"
 
             state_object, _ = p.getBasePositionAndOrientation(self.objectUid)
@@ -215,6 +215,8 @@ class PandaEnv(gym.Env):
 
         info = state_object
         robot_state_obs = np.array([*state_robot, 0, *state_fingers])
+
+        print("Diff", np.array(new_position) - np.array(robot_state_obs[:3]), new_position)
 
         observation = self.get_observation(state_robot, robot_state_obs)
 
@@ -316,3 +318,5 @@ class PandaEnv(gym.Env):
         for s_i in range(10):
             p.stepSimulation()
             p.configureDebugVisualizer(p.COV_ENABLE_SINGLE_STEP_RENDERING)
+
+
