@@ -23,7 +23,7 @@ class PandaEnv(gym.Env):
         p.connect(p.GUI)
         p.resetDebugVisualizerCamera(cameraDistance=1.5, cameraYaw=0, cameraPitch=-40,
                                      cameraTargetPosition=[0.55, -0.35, 0.2])
-        self.action_space = spaces.Discrete(8)  # +/- for each 3 axis, rotation, and gripper
+        self.action_space = spaces.Discrete(7)  # +/- for each 3 axis, rotation, and gripper
         self.discrete_actions_steps = [[-0.5, 0, 0, 0, 1],
                                        [0.5, 0, 0, 0, 1],
                                        [0, -0.5, 0, 0, 1],
@@ -32,19 +32,21 @@ class PandaEnv(gym.Env):
                                        [0, 0, -0.5, 0, 1],
                                        # [0, 0, 0, 0.5, 1],
                                        # [0, 0, 0, -0.5, 1],
-                                       [0, 0, 0, 0, 1],
+                                       # [0, 0, 0, 0, 1],
                                        [0, 0, 0, 0, 0]]
 
         self.min_limits = [.35, -.25, 0]
         self.max_limits = [.85, .25, .75]
 
         self.start_position = [.6, 0, .3]
+        self.step_count = 0
 
         self.observation_space = {'wrist': spaces.Box(np.zeros(wrist_shape), np.ones(wrist_shape)),
                                   'overhead': spaces.Box(np.zeros(overhead_shape), np.ones(overhead_shape)),
                                   'motors': spaces.Box(np.zeros(motor_shape), np.ones(motor_shape))}
 
     def reset(self, **kwargs):
+        self.step_count = 0
         p.resetSimulation()
         p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 0)  # we will enable rendering after we loaded everything
         p.setGravity(0, 0, -10)
@@ -97,6 +99,7 @@ class PandaEnv(gym.Env):
         return observation
 
     def step(self, discrete_action_idx, ):
+        self.step_count += 1
         action = self.discrete_actions_steps[discrete_action_idx]
         # print("action", action)
         p.configureDebugVisualizer(p.COV_ENABLE_SINGLE_STEP_RENDERING)
@@ -144,7 +147,7 @@ class PandaEnv(gym.Env):
 
         # Small penalty if robot tries to go outside limits
         if np.any(new_position > self.max_limits) or np.any(new_position < self.min_limits):
-            reward = -1  # "no action execute"
+            reward = -5  # "no action execute"
 
             state_object, _ = p.getBasePositionAndOrientation(self.objectUid)
             state_robot = p.getLinkState(self.pandaUid, 11)[0]
@@ -156,7 +159,8 @@ class PandaEnv(gym.Env):
 
             observation = self.get_observation(state_robot, robot_state_obs)
 
-            done = False
+            print("Bounds! End")
+            done = True
 
             return observation, reward, done, info
 
@@ -204,10 +208,20 @@ class PandaEnv(gym.Env):
         else:
             reward = TIMESTEP_PENALTY  # or add step penalty
 
+
+        if self.step_count > 500:
+            done = True
+            reward += -50
+
         info = state_object
-        robot_state_obs = np.array([*state_robot, state_joint_angles[2], *state_fingers])
+        robot_state_obs = np.array([*state_robot, 0, *state_fingers])
 
         observation = self.get_observation(state_robot, robot_state_obs)
+
+        if done:
+            print("DONE")
+        else:
+            print('|', end="")
 
         return observation, reward, done, info
 
@@ -217,7 +231,7 @@ class PandaEnv(gym.Env):
         overhead_rgbd = self.get_camera_frames([.5, 0, .5], .7, 90, -90, 0, rgbd=True,
                                                resolution=self.overhead_shape[:2])
 
-        wrist_cam_angle = np.degrees(robot_state_obs[4]) - 90
+        wrist_cam_angle = np.pi/2 #np.degrees(robot_state_obs[4]) - 90
         wrist_cam_offset = .2
         rot_x = np.cos(-np.radians(wrist_cam_angle)) * wrist_cam_offset
         rot_y = np.sin(-np.radians(wrist_cam_angle)) * wrist_cam_offset
@@ -299,6 +313,6 @@ class PandaEnv(gym.Env):
         p.setJointMotorControlArray(self.pandaUid, list(range(7)) + [9, 10], p.POSITION_CONTROL,
                                     list(joint_poses) + 2 * [fingers])
 
-        for s_i in range(25):
+        for s_i in range(10):
             p.stepSimulation()
             p.configureDebugVisualizer(p.COV_ENABLE_SINGLE_STEP_RENDERING)

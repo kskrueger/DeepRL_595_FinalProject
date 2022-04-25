@@ -36,7 +36,7 @@ class Agent_DQN(Agent):
 
         super(Agent_DQN, self).__init__(env)
 
-        self.network_name = "Project4_apr23_3"  # increment this number before training again
+        self.network_name = "Project4_apr23_5"  # increment this number before training again
         self.episode_durations = []
         self.logs = []
         self.scores = []
@@ -46,9 +46,9 @@ class Agent_DQN(Agent):
         self.GAMMA = 0.99  # discount factor
         self.EPS_START = .99  # probability of choosing random action, start high for exploration
         self.EPS_END = .05  # low probability for random action means mostly exploitation at end
-        self.EPS_DECAY = 500000  # rate of decay, in STEPS
+        self.EPS_DECAY = 250000  # rate of decay, in STEPS
         self.EPS_STEP = (self.EPS_START - self.EPS_END) / self.EPS_DECAY
-        self.TARGET_UPDATE = 5000  # how often to update target network (copies q_net weights)
+        self.TARGET_UPDATE = 2500  # how often to update target network (copies q_net weights)
         self.REPLAY_MEMORY_SIZE = 2000
         self.LEARNING_RATE = 1.5e-4
         self.NUM_EPISODES = 50000000
@@ -75,8 +75,8 @@ class Agent_DQN(Agent):
         self.target_net = DQN(**kwargs).to(self.device)
 
         # iDocuments/Classes/DS595_Project4/DeepRL_595_FinalProject/src/networks_backup/apr22_model
-        self.policy_net.load_state_dict(torch.load("networks_backup/apr22_model/Project4_2_target", map_location=self.device))
-        self.target_net.load_state_dict(torch.load("networks_backup/apr22_model/Project4_2_target", map_location=self.device))
+        # self.policy_net.load_state_dict(torch.load("networks_backup/apr22_model/Project4_2_target", map_location=self.device))
+        # self.target_net.load_state_dict(torch.load("networks_backup/apr22_model/Project4_2_target", map_location=self.device))
 
         self.target_net.load_state_dict(self.policy_net.state_dict())
         self.target_net.eval()

@@ -16,7 +16,7 @@ class DQN(nn.Module):
         super(DQN, self).__init__()
 
         # 1 continuous action for each joint (-1 to 1), plus the gripper (<.5 or >.5)
-        self.NUM_ACTIONS = 8
+        self.NUM_ACTIONS = 7
         self.OVERHEAD_CAM_SHAPE = overhead_shape  # RGB-D Overhead Camera
         self.WRIST_CAM_SHAPE = wrist_shape  # RGB Wrist Camera
         self.MOTOR_SIGNAL_SHAPE = motor_shape  # 1 for each joint axis, twist, plus gripper fingers
